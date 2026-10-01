@@ -9,6 +9,8 @@ const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ";
 const HEARTBEAT_MS = 4000;
 const TIMEOUT_MS = 15000;
 const GIVE_UP_MS = 90000;
+const JOIN_GIVE_UP_MS = 20000;
+const PEER_OPTIONS = { config: { iceServers: ICE_SERVERS } };
 const LOCAL = { local: true }; // pseudo-connection for the host's own player
 
 const $ = (id) => document.getElementById(id);
@@ -124,7 +126,7 @@ function leaveRoom(reason) {
 
 function startHosting(code, name, resume, attempt = 0) {
   setStatus(resume ? "Restoring room…" : "Creating room…");
-  const p = new Peer(PEER_PREFIX + code);
+  const p = new Peer(PEER_PREFIX + code, PEER_OPTIONS);
   peer = p;
 
   p.on("open", () => {
@@ -343,7 +345,7 @@ function guestConnect() {
   clearTimeout(retryTimer);
   if (!session || isHost()) return;
   if (!peer || peer.destroyed) {
-    const p = new Peer();
+    const p = new Peer(PEER_OPTIONS);
     peer = p;
     // "open" fires again after a signalling reconnect; keep a working connection.
     p.on("open", () => { if (peer === p && !(conn && conn.open)) openConn(); });
@@ -384,9 +386,10 @@ function hostLost() {
   conn = null;
   if (!session) return;
   if (!lostSince) lostSince = Date.now();
-  if (Date.now() - lostSince > GIVE_UP_MS) {
-    return leaveRoom(session.id ? "Lost connection to the room." : "Couldn't reach that room.");
+  if (!session.id && Date.now() - lostSince > JOIN_GIVE_UP_MS) {
+    return leaveRoom("Couldn't connect to the host. Their network may block direct connections. See config.js to add a relay server.");
   }
+  if (Date.now() - lostSince > GIVE_UP_MS) return leaveRoom("Lost connection to the room.");
   setStatus(session.id ? "Reconnecting…" : "Joining room…");
   scheduleRetry();
 }

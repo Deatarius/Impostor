@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <title>Impostor – Pass &amp; Play</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main id="app">
+
+    <!-- Setup -->
+    <section id="screen-setup" class="screen active">
+      <h1>Impostor</h1>
+      <p class="sub">Pass &amp; play: one phone, passed around.</p>
+      <a href="index.html" class="btn ghost link">&larr; Play online instead</a>
+
+      <div class="card">
+        <h2>Players <span id="player-count" class="pill">0/10</span></h2>
+        <form id="add-player-form" class="row">
+          <input id="player-name" type="text" placeholder="Player name" maxlength="20" autocomplete="off">
+          <button type="submit" class="btn small">Add</button>
+        </form>
+        <ul id="player-list"></ul>
+      </div>
+
+      <div class="card">
+        <h2>Categories</h2>
+        <div id="category-list" class="chips"></div>
+      </div>
+
+      <div class="card">
+        <label class="toggle">
+          <input id="opt-hint" type="checkbox">
+          <span>Tell the impostor the category</span>
+        </label>
+      </div>
+
+      <p id="setup-error" class="error"></p>
+      <button id="btn-start" class="btn primary">Start game</button>
+    </section>
+
+    <!-- Pass & reveal -->
+    <section id="screen-reveal" class="screen">
+      <p class="sub" id="reveal-progress"></p>
+      <div id="pass-view" class="center">
+        <p>Pass the phone to</p>
+        <h1 id="pass-name"></h1>
+        <button id="btn-show" class="btn primary">Tap to see your role</button>
+      </div>
+      <div id="role-view" class="center hidden">
+        <div id="role-card" class="role-card">
+          <p id="role-label"></p>
+          <h1 id="role-word"></h1>
+          <p id="role-extra" class="sub"></p>
+        </div>
+        <button id="btn-hide" class="btn primary">Hide &amp; pass on</button>
+      </div>
+    </section>
+
+    <!-- Discussion -->
+    <section id="screen-discuss" class="screen">
+      <div class="center">
+        <p class="sub">Everyone has seen their role.</p>
+        <h2><span id="first-player"></span> starts!</h2>
+        <p>Take turns saying one word related to the secret. Then vote on who the impostor is.</p>
+        <button id="btn-reveal" class="btn danger">Reveal the impostor</button>
+      </div>
+    </section>
+
+    <!-- Result -->
+    <section id="screen-result" class="screen">
+      <div class="center">
+        <p class="sub">The impostor was</p>
+        <h1 id="result-impostor" class="impostor-name"></h1>
+        <p class="sub">The word was</p>
+        <h2 id="result-word"></h2>
+        <button id="btn-again" class="btn primary">Play again</button>
+        <button id="btn-setup" class="btn ghost">Change players</button>
+      </div>
+    </section>
+
+  </main>
+  <script src="words.js"></script>
+  <script src="local.js"></script>
+</body>
+</html>

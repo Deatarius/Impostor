@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <title>Impostor</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="status" class="status hidden"></div>
+  <div id="toast" class="toast hidden"></div>
+
+  <main id="app">
+
+    <!-- Home -->
+    <section id="screen-home" class="screen active">
+      <h1>Impostor</h1>
+      <p class="sub">Everyone plays on their own phone.</p>
+
+      <div class="card stack">
+        <label for="name">Your name</label>
+        <input id="name" type="text" placeholder="Name" maxlength="20" autocomplete="off">
+        <button id="btn-create" class="btn primary">Create room</button>
+        <div class="divider">or join a room</div>
+        <div class="row">
+          <input id="join-code" type="text" class="code-input" placeholder="CODE" maxlength="4" autocomplete="off" autocapitalize="characters">
+          <button id="btn-join" class="btn small">Join</button>
+        </div>
+      </div>
+
+      <a href="local.html" class="btn ghost link">Pass &amp; play on one phone</a>
+    </section>
+
+    <!-- Lobby -->
+    <section id="screen-lobby" class="screen">
+      <p class="sub center-text">Room code</p>
+      <div id="lobby-code" class="code-big"></div>
+      <button id="btn-share" class="btn ghost">Share invite link</button>
+
+      <div class="card">
+        <h2>Players <span id="lobby-count" class="pill"></span></h2>
+        <ul id="lobby-players" class="player-list"></ul>
+      </div>
+
+      <div id="host-settings">
+        <div class="card">
+          <h2>Categories</h2>
+          <div id="category-list" class="chips"></div>
+        </div>
+        <div class="card">
+          <label class="toggle">
+            <input id="opt-hint" type="checkbox">
+            <span>Tell the impostor the category</span>
+          </label>
+        </div>
+        <button id="btn-start" class="btn primary">Start game</button>
+        <p id="start-hint" class="sub center-text"></p>
+      </div>
+
+      <div id="guest-settings" class="card">
+        <p class="sub" id="settings-summary"></p>
+        <p>Waiting for the host to start&hellip;</p>
+      </div>
+
+      <button class="btn ghost btn-leave">Leave room</button>
+    </section>
+
+    <!-- In round -->
+    <section id="screen-game" class="screen">
+      <div class="center">
+        <div id="role-card" class="role-card covered">
+          <p id="role-label"></p>
+          <h1 id="role-word"></h1>
+          <p id="role-extra" class="sub"></p>
+        </div>
+        <p class="sub">Tap the card to show or hide it.</p>
+        <h2><span id="first-player"></span> starts!</h2>
+        <p>Take turns saying one word related to the secret, then vote on who the impostor is.</p>
+        <button id="btn-reveal" class="btn danger host-only">Reveal the impostor</button>
+        <p class="sub guest-only">The host will reveal the impostor.</p>
+      </div>
+    </section>
+
+    <!-- Result -->
+    <section id="screen-result" class="screen">
+      <div class="center">
+        <p class="sub">The impostor was</p>
+        <h1 id="result-impostor" class="impostor-name"></h1>
+        <p class="sub">The word was</p>
+        <h2 id="result-word"></h2>
+        <button id="btn-again" class="btn primary host-only">Play again</button>
+        <button id="btn-lobby" class="btn host-only">Back to lobby</button>
+        <p class="sub guest-only">Waiting for the host&hellip;</p>
+        <button class="btn ghost btn-leave">Leave room</button>
+      </div>
+    </section>
+
+  </main>
+
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <script src="words.js"></script>
+  <script src="online.js"></script>
+</body>
+</html>

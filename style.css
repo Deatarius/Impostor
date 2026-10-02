@@ -179,3 +179,29 @@ a.btn { display: block; text-align: center; text-decoration: none; }
 }
 .status { top: 12px; background: #3a3d66; }
 .toast { bottom: 20px; background: var(--danger); color: white; }
+
+/* ---------- Voting ---------- */
+
+.vote-list { display: flex; flex-direction: column; gap: 10px; margin: 8px 0 16px; }
+.vote-option {
+  width: 100%;
+  padding: 16px;
+  border-radius: 12px;
+  border: 2px solid transparent;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 1.1rem;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+.vote-option.on { border-color: var(--accent); background: #2a2c55; }
+.vote-option.on::after { content: "✓"; float: right; color: var(--accent); }
+
+.verdict { font-size: 1.3rem; justify-content: center; text-align: center; }
+.verdict.good { color: var(--ok); }
+.verdict.bad { color: var(--danger); }
+
+.result-votes { width: 100%; text-align: left; background: var(--panel); border-radius: var(--radius); padding: 4px 12px; }
+.voted-by { margin: 2px 0 0; font-size: 0.85rem; }
+.tag.impostor { background: var(--danger); color: white; }

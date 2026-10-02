@@ -233,7 +233,43 @@ function removePlayer(p, kicked) {
     if (kicked) sendTo(c, { type: "kicked" });
     setTimeout(() => c.close(), 500);
   }
+  finishVoteIfDone();
   broadcast();
+}
+
+// Players from the current round who are still in the room can vote.
+function voters() {
+  const r = room.round;
+  return r ? room.players.filter((q) => r.ids.includes(q.id)) : [];
+}
+
+function finishVoteIfDone() {
+  if (room.phase !== "voting") return;
+  const eligible = voters();
+  if (eligible.length && eligible.every((q) => room.round.votes[q.id])) room.phase = "result";
+}
+
+// Vote totals for the results screen, most votes first.
+function tallyVotes() {
+  const r = room.round;
+  const rows = r.ids.map((id) => ({
+    id,
+    name: r.names[id],
+    voters: Object.keys(r.votes).filter((v) => r.votes[v] === id).map((v) => r.names[v]),
+  })).filter((row) => row.voters.length);
+  rows.sort((a, b) => b.voters.length - a.voters.length);
+  const top = rows.length ? rows[0].voters.length : 0;
+  const leaders = rows.filter((row) => row.voters.length === top);
+  let verdict = "noVotes";
+  if (top) {
+    if (leaders.length === 1 && leaders[0].id === r.impostorId) verdict = "caught";
+    else if (leaders.some((row) => row.id === r.impostorId)) verdict = "tie";
+    else verdict = "escaped";
+  }
+  return {
+    verdict,
+    rows: rows.map((row) => ({ name: row.name, voters: row.voters, impostor: row.id === r.impostorId })),
+  };
 }
 
 function dropConn(c) {
@@ -282,7 +318,24 @@ function viewFor(p) {
     categories: Object.keys(WORDS),
     role,
     firstName: r ? r.firstName : null,
-    result: room.phase === "result" ? { impostorName: r.impostorName, word: r.word } : null,
+    voting: room.phase === "voting" ? votingView(p) : null,
+    result: room.phase === "result"
+      ? { impostorName: r.impostorName, word: r.word, votes: r.votes ? tallyVotes() : null }
+      : null,
+  };
+}
+
+function votingView(p) {
+  const r = room.round;
+  const eligible = voters();
+  const canVote = eligible.includes(p);
+  return {
+    canVote,
+    myVote: r.votes[p.id] || null,
+    candidates: canVote ? eligible.filter((q) => q !== p).map((q) => ({ id: q.id, name: q.name })) : [],
+    votedCount: eligible.filter((q) => r.votes[q.id]).length,
+    total: eligible.length,
+    waitingFor: eligible.filter((q) => !r.votes[q.id]).map((q) => q.name),
   };
 }
 
@@ -300,7 +353,9 @@ function hostHandle(c, msg) {
       if (p) return;
       const name = cleanName(msg.name);
       if (!name) return fail("Enter a name.");
-      if (room.phase === "playing") return fail("A round is in progress — try again in a moment.");
+      if (room.phase === "playing" || room.phase === "voting") {
+        return fail("A round is in progress — try again in a moment.");
+      }
       if (room.players.length >= MAX_PLAYERS) return fail("That room is full.");
       if (room.players.some((q) => q.name.toLowerCase() === name.toLowerCase())) {
         return fail("That name is already taken in this room.");
@@ -321,6 +376,16 @@ function hostHandle(c, msg) {
     case "leave":
       if (p && c !== LOCAL) removePlayer(p, false);
       return;
+
+    case "vote": {
+      const r = room.round;
+      if (!p || room.phase !== "voting" || !r.ids.includes(p.id)) return;
+      const target = room.players.find((q) => q.id === msg.target);
+      if (!target || target === p || !r.ids.includes(target.id)) return;
+      r.votes[p.id] = target.id;
+      finishVoteIfDone();
+      return broadcast();
+    }
   }
 
   if (c !== LOCAL) return; // everything below is host-only
@@ -345,14 +410,27 @@ function hostHandle(c, msg) {
         word: pick(options),
         category,
         firstName: pick(room.players).name,
+        names: Object.fromEntries(room.players.map((q) => [q.id, q.name])),
+        votes: null,
       };
       room.roundNo++;
       room.phase = "playing";
       return broadcast();
     }
 
+    case "start-vote":
+      if (room.phase === "playing") {
+        room.round.votes = {};
+        if (!room.round.names) {
+          room.round.names = Object.fromEntries(room.players.map((q) => [q.id, q.name]));
+        }
+        room.phase = "voting";
+        broadcast();
+      }
+      return;
+
     case "reveal":
-      if (room.phase === "playing") { room.phase = "result"; broadcast(); }
+      if (room.phase === "playing" || room.phase === "voting") { room.phase = "result"; broadcast(); }
       return;
 
     case "lobby":
@@ -512,6 +590,7 @@ function render() {
 
   if (view.phase === "lobby") renderLobby(host);
   else if (view.phase === "playing") renderGame();
+  else if (view.phase === "voting") renderVote();
   else renderResult();
 }
 
@@ -621,9 +700,65 @@ function renderRoleCard() {
   }
 }
 
+function renderVote() {
+  const v = view.voting;
+  const list = $("vote-list");
+  list.innerHTML = "";
+  for (const cand of v.candidates) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "vote-option" + (v.myVote === cand.id ? " on" : "");
+    btn.textContent = cand.name;
+    btn.onclick = () => act({ type: "vote", target: cand.id });
+    list.append(btn);
+  }
+  $("vote-progress").textContent = `${v.votedCount} of ${v.total} voted`
+    + (v.waitingFor.length ? ` · waiting for ${v.waitingFor.join(", ")}` : "");
+  $("vote-note").textContent = !v.canVote
+    ? "You joined mid-round, so you'll vote in the next one."
+    : v.myVote ? "Vote locked in. You can change it until everyone has voted."
+    : "Tap the player you think is the impostor.";
+  showScreen("vote");
+}
+
+const VERDICTS = {
+  caught: "Caught! The group found the impostor.",
+  tie: "Tie vote! The impostor slipped away.",
+  escaped: "Wrong person! The impostor got away.",
+  noVotes: "Nobody voted.",
+};
+
 function renderResult() {
-  $("result-impostor").textContent = view.result.impostorName;
-  $("result-word").textContent = view.result.word;
+  const res = view.result;
+  $("result-impostor").textContent = res.impostorName;
+  $("result-word").textContent = res.word;
+
+  const verdict = $("result-verdict");
+  verdict.classList.toggle("hidden", !res.votes);
+  const list = $("result-votes");
+  list.innerHTML = "";
+  list.classList.toggle("hidden", !res.votes || !res.votes.rows.length);
+  if (res.votes) {
+    verdict.textContent = VERDICTS[res.votes.verdict];
+    verdict.className = "verdict " + (res.votes.verdict === "caught" ? "good" : "bad");
+    for (const row of res.votes.rows) {
+      const li = document.createElement("li");
+      const who = document.createElement("div");
+      const name = document.createElement("strong");
+      name.textContent = row.name;
+      who.append(name);
+      if (row.impostor) who.append(tag("impostor", "impostor"));
+      const by = document.createElement("div");
+      by.className = "sub voted-by";
+      by.textContent = "Voted by " + row.voters.join(", ");
+      who.append(by);
+      const count = document.createElement("span");
+      count.className = "pill";
+      count.textContent = row.voters.length + (row.voters.length === 1 ? " vote" : " votes");
+      li.append(who, count);
+      list.append(li);
+    }
+  }
   showScreen("result");
 }
 
@@ -659,7 +794,11 @@ $("join-code").addEventListener("input", (e) => {
 $("opt-hint").onchange = (e) =>
   act({ type: "settings", categories: view.settings.categories, hint: e.target.checked });
 $("btn-start").onclick = () => act({ type: "start" });
+$("btn-start-vote").onclick = () => act({ type: "start-vote" });
 $("btn-reveal").onclick = () => act({ type: "reveal" });
+$("btn-end-vote").onclick = () => {
+  if (confirm("Reveal now? Players who haven't voted won't be counted.")) act({ type: "reveal" });
+};
 $("btn-again").onclick = () => act({ type: "start" });
 $("btn-lobby").onclick = () => act({ type: "lobby" });
 

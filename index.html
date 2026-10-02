@@ -82,18 +82,30 @@
         <p class="sub">Tap the card to show or hide it.</p>
         <h2><span id="first-player"></span> starts!</h2>
         <p>Take turns saying one word related to the secret, then vote on who the impostor is.</p>
-        <button id="btn-reveal" class="btn danger host-only">Reveal the impostor</button>
-        <p class="sub guest-only">The host will reveal the impostor.</p>
+        <button id="btn-start-vote" class="btn primary host-only">Start voting</button>
+        <button id="btn-reveal" class="btn ghost host-only">Skip the vote and reveal</button>
+        <p class="sub guest-only">The host will start the vote when you're ready.</p>
       </div>
+    </section>
+
+    <!-- Voting -->
+    <section id="screen-vote" class="screen">
+      <h1 class="center-text">Who's the impostor?</h1>
+      <p id="vote-note" class="sub center-text"></p>
+      <div id="vote-list" class="vote-list"></div>
+      <p id="vote-progress" class="sub center-text"></p>
+      <button id="btn-end-vote" class="btn ghost host-only">Reveal now</button>
     </section>
 
     <!-- Result -->
     <section id="screen-result" class="screen">
       <div class="center">
+        <h2 id="result-verdict" class="verdict hidden"></h2>
         <p class="sub">The impostor was</p>
         <h1 id="result-impostor" class="impostor-name"></h1>
         <p class="sub">The word was</p>
         <h2 id="result-word"></h2>
+        <ul id="result-votes" class="player-list result-votes hidden"></ul>
         <button id="btn-again" class="btn primary host-only">Play again</button>
         <button id="btn-lobby" class="btn host-only">Back to lobby</button>
         <p class="sub guest-only">Waiting for the host&hellip;</p>

@@ -7,8 +7,8 @@
 // Free TURN: sign up at https://www.metered.ca/stun-turn, create an app, and copy
 // the username and credential from its "TURN Server" page into the entries below.
 // These values end up in the public page; that's expected for TURN credentials.
-const TURN_USERNAME = "";
-const TURN_CREDENTIAL = "";
+const TURN_USERNAME = "787681c493a3490a7f98704e";
+const TURN_CREDENTIAL = "bbztEwv+ZZo3dvHR";
 
 const ICE_SERVERS = [
   { urls: "stun:stun.l.google.com:19302" },

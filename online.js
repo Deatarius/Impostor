@@ -8,9 +8,9 @@ const MIN_PLAYERS = 3;
 const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ";
 const HEARTBEAT_MS = 4000;
 const TIMEOUT_MS = 15000;
-const GIVE_UP_MS = 90000;
 const JOIN_GIVE_UP_MS = 20000;
 const PEER_OPTIONS = { config: { iceServers: ICE_SERVERS } };
+const BACKUP_MAX_AGE_MS = 6 * 60 * 60 * 1000;
 const LOCAL = { local: true }; // pseudo-connection for the host's own player
 
 const $ = (id) => document.getElementById(id);
@@ -33,6 +33,30 @@ const store = {
   set(k, v) { try { sessionStorage.setItem(k, JSON.stringify(v)); } catch (_) { /* unavailable */ } },
   del(k) { try { sessionStorage.removeItem(k); } catch (_) { /* unavailable */ } },
 };
+
+// Longer-lived copy of the current room, in case the browser drops sessionStorage
+// (e.g. the phone killed the tab while locked). Offered as a "Rejoin" button.
+function saveBackup() {
+  try {
+    if (!session) return localStorage.removeItem("impostor-backup");
+    localStorage.setItem("impostor-backup", JSON.stringify({
+      session, room: isHost() ? store.get("impostor-room") : null, savedAt: Date.now(),
+    }));
+  } catch (_) { /* unavailable */ }
+}
+
+// Stop the screen auto-locking while in a room. The browser releases the lock
+// whenever the page is hidden, so it's re-requested on every render/unhide.
+let wakeLock = null;
+async function keepAwake() {
+  if (!("wakeLock" in navigator)) return;
+  if (!session) {
+    if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
+    return;
+  }
+  if (document.visibilityState !== "visible" || (wakeLock && !wakeLock.released)) return;
+  try { wakeLock = await navigator.wakeLock.request("screen"); } catch (_) { /* not allowed */ }
+}
 
 function cleanName(name) {
   return typeof name === "string" ? name.trim().replace(/\s+/g, " ").slice(0, 20) : "";
@@ -90,6 +114,7 @@ function onMessage(msg) {
     case "session":
       session = { code: session.code, id: msg.id, token: msg.token };
       store.set("impostor-session", session);
+      saveBackup();
       break;
     case "state":
       view = msg;
@@ -115,6 +140,8 @@ function leaveRoom(reason) {
   session = null;
   store.del("impostor-session");
   store.del("impostor-room");
+  saveBackup();
+  keepAwake();
   setStatus("");
   showScreen("home");
   if (reason) toast(reason);
@@ -124,7 +151,9 @@ function leaveRoom(reason) {
 // Host: owns the room and runs the game rules
 // =====================================================================
 
-function startHosting(code, name, resume, attempt = 0) {
+let restoreAttempts = 0;
+
+function startHosting(code, name, resume) {
   setStatus(resume ? "Restoring room…" : "Creating room…");
   const p = new Peer(PEER_PREFIX + code, PEER_OPTIONS);
   peer = p;
@@ -132,6 +161,7 @@ function startHosting(code, name, resume, attempt = 0) {
   p.on("open", () => {
     if (peer !== p) return;
     setStatus("");
+    restoreAttempts = 0;
     if (!room) {
       room = {
         code, hostId: null, players: [], phase: "lobby", roundNo: 0, round: null,
@@ -140,6 +170,7 @@ function startHosting(code, name, resume, attempt = 0) {
       session = { code, host: true };
       store.set("impostor-session", session);
       addPlayer(LOCAL, name);
+      saveBackup();
     } else {
       broadcast();
     }
@@ -152,7 +183,7 @@ function startHosting(code, name, resume, attempt = 0) {
   });
 
   p.on("disconnected", () => {
-    if (peer === p && !p.destroyed) setTimeout(() => !p.destroyed && p.reconnect(), 1000);
+    if (peer === p) setTimeout(keepHostOnline, 1000);
   });
 
   p.on("error", (err) => {
@@ -160,15 +191,25 @@ function startHosting(code, name, resume, attempt = 0) {
     if (err.type === "unavailable-id") {
       p.destroy();
       if (!resume) return startHosting(newCode(), name, false);
-      // The signalling server hasn't released our old id yet (page reload) — retry.
-      if (attempt < 20) return setTimeout(() => startHosting(code, name, true, attempt + 1), 1500);
-      leaveRoom("Couldn't restore the room.");
+      // The signalling server hasn't released our old id yet (page reload or the
+      // phone was locked). keepHostOnline() retries on the next heartbeat.
+      peer = null;
+      if (++restoreAttempts > 40) leaveRoom("Couldn't restore the room.");
     } else if (["network", "server-error", "socket-error", "socket-closed"].includes(err.type)) {
       setStatus("Connection problem — retrying…");
+      if (p.destroyed) peer = null;
     } else {
       console.warn("PeerJS error", err);
     }
   });
+}
+
+// Make sure the host is reachable: reconnect to the signalling server, or set the
+// peer up again from scratch if the browser tore it down while the phone was locked.
+function keepHostOnline() {
+  if (!isHost()) return;
+  if (!peer || peer.destroyed) startHosting(room.code, null, true);
+  else if (peer.disconnected) { try { peer.reconnect(); } catch (_) { peer = null; } }
 }
 
 const hostPlayer = () => room.players.find((p) => p.id === room.hostId);
@@ -212,6 +253,7 @@ function saveRoom() {
     ...room,
     players: room.players.map(({ id, token, name }) => ({ id, token, name })),
   });
+  saveBackup();
 }
 
 function broadcast() {
@@ -389,7 +431,6 @@ function hostLost() {
   if (!session.id && Date.now() - lostSince > JOIN_GIVE_UP_MS) {
     return leaveRoom("Couldn't connect to the host. Their network may block direct connections. See config.js to add a relay server.");
   }
-  if (Date.now() - lostSince > GIVE_UP_MS) return leaveRoom("Lost connection to the room.");
   setStatus(session.id ? "Reconnecting…" : "Joining room…");
   scheduleRetry();
 }
@@ -400,19 +441,16 @@ function scheduleRetry() {
 }
 
 function onGuestPeerError(err) {
-  if (err.type === "peer-unavailable") {
-    // No host with that code. For a fresh join that means a wrong code;
-    // for an existing player the host is probably reloading, so keep trying.
-    if (!session || !session.id) return leaveRoom("Room not found — check the code.");
-    if (conn) { const c = conn; conn = null; c.close(); }
-    return hostLost();
+  // No host with that code: for a fresh join that means a wrong code.
+  if (err.type === "peer-unavailable" && !(session && session.id)) {
+    return leaveRoom("Room not found — check the code.");
   }
-  if (["network", "server-error", "socket-error", "socket-closed"].includes(err.type)) {
-    setStatus("Connection problem — retrying…");
-    if (peer && peer.destroyed) peer = null;
-    return hostLost();
-  }
-  console.warn("PeerJS error", err);
+  // Anything else (host reloading or asleep, network blips): keep retrying.
+  // Players already in a room are never dropped automatically.
+  if (peer && peer.destroyed) peer = null;
+  if (conn && conn.open) return;
+  if (conn) { const c = conn; conn = null; c.close(); }
+  hostLost();
 }
 
 // Heartbeats so dropped phones are noticed quickly on both sides.
@@ -432,6 +470,7 @@ setInterval(() => {
       }
     }
     if (changed) broadcast();
+    keepHostOnline();
   } else if (session) {
     if (conn && conn.open) conn.send({ type: "ping" });
     if (conn && Date.now() - lastHostMsg > TIMEOUT_MS) {
@@ -446,11 +485,15 @@ setInterval(() => {
 // Phones suspend tabs when locked; reconnect as soon as we're visible again.
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState !== "visible") return;
-  if (isHost()) {
-    if (peer && peer.disconnected && !peer.destroyed) peer.reconnect();
-  } else if (session && session.id && !(conn && conn.open)) {
-    guestConnect();
-  }
+  keepAwake();
+  if (isHost()) return keepHostOnline();
+  if (!session || !session.id) return;
+  // A connection that looks open may have died while we were asleep.
+  if (conn && conn.open && Date.now() - lastHostMsg < HEARTBEAT_MS * 2) return;
+  if (conn) { const c = conn; conn = null; c.close(); }
+  if (!lostSince) lostSince = Date.now();
+  setStatus("Reconnecting…");
+  guestConnect();
 });
 
 // =====================================================================
@@ -459,6 +502,7 @@ document.addEventListener("visibilitychange", () => {
 
 function render() {
   if (!view) return showScreen("home");
+  keepAwake();
   const host = view.you === view.hostId;
   document.querySelectorAll(".host-only").forEach((el) => el.classList.toggle("hidden", !host));
   document.querySelectorAll(".guest-only").forEach((el) => el.classList.toggle("hidden", host));
@@ -644,6 +688,29 @@ $("btn-share").onclick = async () => {
   } catch (_) { /* share cancelled */ }
 };
 
+// Other open tabs in this browser answer if they're already using a seat, so the
+// "Rejoin" backup is only offered when nobody else is playing it.
+const seatKey = (s) => s && (s.host ? "host:" + s.code : s.id);
+const tabs = "BroadcastChannel" in window ? new BroadcastChannel("impostor-tabs") : null;
+if (tabs) {
+  tabs.onmessage = (e) => {
+    if (e.data && e.data.type === "who" && session && seatKey(session) === e.data.seat) {
+      tabs.postMessage({ type: "mine", seat: e.data.seat });
+    }
+  };
+}
+
+function seatInUse(seat) {
+  if (!tabs) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    const ch = new BroadcastChannel("impostor-tabs");
+    const done = (inUse) => { ch.close(); resolve(inUse); };
+    ch.onmessage = (e) => { if (e.data && e.data.type === "mine" && e.data.seat === seat) done(true); };
+    ch.postMessage({ type: "who", seat });
+    setTimeout(() => done(false), 400);
+  });
+}
+
 // ---------- Startup ----------
 
 (function init() {
@@ -674,5 +741,24 @@ $("btn-share").onclick = async () => {
     session = null;
     store.del("impostor-session");
     store.del("impostor-room");
+    offerRejoin();
   }
 })();
+
+async function offerRejoin() {
+  let backup = null;
+  try { backup = JSON.parse(localStorage.getItem("impostor-backup")); } catch (_) { /* unavailable */ }
+  if (!backup || !backup.session || Date.now() - backup.savedAt > BACKUP_MAX_AGE_MS) return;
+  if (await seatInUse(seatKey(backup.session))) return;
+  $("rejoin-code").textContent = backup.session.code;
+  $("rejoin-card").classList.remove("hidden");
+  $("btn-rejoin").onclick = () => {
+    store.set("impostor-session", backup.session);
+    if (backup.room) store.set("impostor-room", backup.room);
+    location.reload();
+  };
+  $("btn-rejoin-dismiss").onclick = () => {
+    try { localStorage.removeItem("impostor-backup"); } catch (_) { /* unavailable */ }
+    $("rejoin-card").classList.add("hidden");
+  };
+}

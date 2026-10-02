@@ -17,6 +17,12 @@
       <h1>Impostor</h1>
       <p class="sub">Everyone plays on their own phone.</p>
 
+      <div id="rejoin-card" class="card stack hidden">
+        <p>You were in room <strong id="rejoin-code"></strong>.</p>
+        <button id="btn-rejoin" class="btn primary">Rejoin room</button>
+        <button id="btn-rejoin-dismiss" class="btn ghost">Dismiss</button>
+      </div>
+
       <div class="card stack">
         <label for="name">Your name</label>
         <input id="name" type="text" placeholder="Name" maxlength="20" autocomplete="off">

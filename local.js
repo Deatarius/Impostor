@@ -1,6 +1,8 @@
 const MAX_PLAYERS = 10;
 const MIN_PLAYERS = 3;
 const STORAGE_KEY = "impostor-settings";
+// Categories that existed before saves recorded which ones the player had seen.
+const ORIGINAL_CATEGORIES = ["Food", "Animals", "Places", "Objects", "Jobs", "Sports", "Movies & TV"];
 
 const state = {
   players: [],
@@ -36,6 +38,7 @@ function save() {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       players: state.players, categories: state.categories, hint: state.hint,
+      known: Object.keys(WORDS),
     }));
   } catch (_) { /* storage unavailable */ }
 }
@@ -46,7 +49,10 @@ function load() {
     if (!data) return;
     if (Array.isArray(data.players)) state.players = data.players.slice(0, MAX_PLAYERS);
     if (Array.isArray(data.categories)) {
-      const valid = data.categories.filter((c) => c in WORDS);
+      // Categories added since this save was made start switched on.
+      const known = Array.isArray(data.known) ? data.known : ORIGINAL_CATEGORIES;
+      const added = Object.keys(WORDS).filter((c) => !known.includes(c));
+      const valid = data.categories.filter((c) => c in WORDS).concat(added);
       if (valid.length) state.categories = valid;
     }
     state.hint = !!data.hint;
